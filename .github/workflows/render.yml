@@ -1,0 +1,72 @@
+name: cloud_render
+
+on:
+  repository_dispatch:
+    types: [render]
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    env:
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+
+      BG_URL: ${{ github.event.client_payload.bg_url }}
+      MP3_KEY: ${{ github.event.client_payload.mp3_key }}
+      SRT_KEY: ${{ github.event.client_payload.srt_key }}
+      OUT_KEY: ${{ github.event.client_payload.out_key }}
+
+      WIDTH: ${{ github.event.client_payload.width }}
+      HEIGHT: ${{ github.event.client_payload.height }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ffmpeg + fonts + awscli
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core awscli curl
+
+      - name: Configure AWS (R2)
+        run: |
+          aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
+          aws configure set region "auto"
+
+      - name: Download inputs
+        run: |
+          set -e
+          echo "Downloading background image..."
+          curl -L "$BG_URL" -o bg.png
+
+          echo "Downloading MP3 and SRT from R2..."
+          aws --endpoint-url "$R2_ENDPOINT" s3 cp "s3://$R2_BUCKET/$MP3_KEY" vo.mp3
+          aws --endpoint-url "$R2_ENDPOINT" s3 cp "s3://$R2_BUCKET/$SRT_KEY" subs.srt
+
+          ls -lah
+
+      - name: Render MP4 (1280x720, 16:9) with burned subtitles
+        run: |
+          set -e
+          W=${WIDTH:-1280}
+          H=${HEIGHT:-720}
+
+          ffmpeg -y \
+            -loop 1 -i bg.png \
+            -i vo.mp3 \
+            -vf "scale=${W}:${H}:force_original_aspect_ratio=cover,crop=${W}:${H},subtitles=subs.srt:force_style='FontName=DejaVu Sans,FontSize=42,Outline=4,Shadow=1,MarginV=50'" \
+            -c:v libx264 -tune stillimage -pix_fmt yuv420p \
+            -c:a aac -b:a 192k \
+            -shortest out.mp4
+
+          ls -lah out.mp4
+
+      - name: Upload MP4 to R2
+        run: |
+          set -e
+          aws --endpoint-url "$R2_ENDPOINT" s3 cp out.mp4 "s3://$R2_BUCKET/$OUT_KEY" \
+            --content-type "video/mp4"
+          echo "Uploaded: s3://$R2_BUCKET/$OUT_KEY"
