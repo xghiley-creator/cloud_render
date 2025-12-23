@@ -1,0 +1,40 @@
+name: r2_test
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+            - name: Install awscli (official)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip curl
+          curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip -q awscliv2.zip
+          sudo ./aws/install
+          aws --version
+
+
+      - name: Configure AWS env
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "AWS_DEFAULT_REGION=auto" >> $GITHUB_ENV
+
+      - name: Show endpoint + bucket
+        run: |
+          echo "Endpoint: ${{ secrets.R2_ENDPOINT }}"
+          echo "Bucket:   ${{ secrets.R2_BUCKET }}"
+
+      - name: List bucket (should succeed)
+        run: |
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 ls "s3://${{ secrets.R2_BUCKET }}/" || exit 1
+
+      - name: Upload + download a tiny test file
+        run: |
+          echo "hello" > test.txt
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp test.txt "s3://${{ secrets.R2_BUCKET }}/test/n8n_test.txt"
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp "s3://${{ secrets.R2_BUCKET }}/test/n8n_test.txt" out.txt
+          cat out.txt
