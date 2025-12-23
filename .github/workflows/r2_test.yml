@@ -1,12 +1,11 @@
 name: r2_test
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Install AWS CLI v2 (official)
         run: |
