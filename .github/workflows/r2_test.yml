@@ -7,14 +7,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Install AWS CLI v2 (official)
+      - name: Show AWS CLI version (preinstalled)
         run: |
           set -e
-          sudo apt-get update
-          sudo apt-get install -y curl unzip
-          curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip -q awscliv2.zip
-          sudo ./aws/install
           aws --version
 
       - name: Verify required secrets exist
