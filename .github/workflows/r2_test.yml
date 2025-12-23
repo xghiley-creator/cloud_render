@@ -2,6 +2,14 @@ name: r2_test
 
 on:
   workflow_dispatch:
+    inputs:
+      job_id:
+        description: "Unique job id"
+        required: true
+      mp3_url:
+        description: "Public MP3 URL"
+        required: true
+
 
 jobs:
   test:
@@ -25,6 +33,20 @@ jobs:
           echo "AWS_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}" >> $GITHUB_ENV
           echo "AWS_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
           echo "AWS_DEFAULT_REGION=us-east-1" >> $GITHUB_ENV
+
+      - name: Download MP3 from URL
+        run: |
+          set -e
+          curl -L "${{ inputs.mp3_url }}" -o vo.mp3
+          ls -lh vo.mp3
+
+      - name: Upload MP3 to R2 (inputs/)
+        run: |
+          set -e
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp \
+            vo.mp3 "s3://${{ secrets.R2_BUCKET }}/inputs/${{ inputs.job_id }}/vo.mp3" \
+            --content-type "audio/mpeg"
+
 
       - name: List bucket (proves creds + endpoint)
         run: |
