@@ -47,11 +47,38 @@ jobs:
             vo.mp3 "s3://${{ secrets.R2_BUCKET }}/inputs/${{ inputs.job_id }}/vo.mp3" \
             --content-type "audio/mpeg"
 
-
       - name: List bucket (proves creds + endpoint)
         run: |
           set -e
           aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 ls "s3://${{ secrets.R2_BUCKET }}/"
+
+      - name: Upload MP4 to R2 (outputs/)
+        run: |
+          set -e
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp \
+            out.mp4 "s3://${{ secrets.R2_BUCKET }}/outputs/${{ inputs.job_id }}/final.mp4" \
+            --content-type "video/mp4"
+
+      - name: Generate signed download URL (30 min)
+        id: sign
+        run: |
+          set -e
+          URL=$(aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 presign \
+            "s3://${{ secrets.R2_BUCKET }}/outputs/${{ inputs.job_id }}/final.mp4" \
+            --expires-in 1800)
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "SIGNED_URL=$URL" >> $GITHUB_ENV
+
+      - name: Save URL to artifact
+        run: |
+          echo "${SIGNED_URL}" > signed_url.txt
+
+      - name: Upload artifact (signed_url.txt)
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed_url
+          path: signed_url.txt
+          retention-days: 1
 
       - name: Upload + download a tiny test file
         run: |
