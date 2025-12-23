@@ -1,72 +1,77 @@
-name: cloud_render
+name: render
 
 on:
-  repository_dispatch:
-    types: [render]
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "Unique job id"
+        required: true
+      mp3_url:
+        description: "Public MP3 URL"
+        required: true
+      bg_image_url:
+        description: "Background image URL"
+        required: true
+      srt_text:
+        description: "Full SRT text"
+        required: true
 
 jobs:
   render:
     runs-on: ubuntu-latest
-    env:
-      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
-      R2_BUCKET: ${{ secrets.R2_BUCKET }}
-
-      BG_URL: ${{ github.event.client_payload.bg_url }}
-      MP3_KEY: ${{ github.event.client_payload.mp3_key }}
-      SRT_KEY: ${{ github.event.client_payload.srt_key }}
-      OUT_KEY: ${{ github.event.client_payload.out_key }}
-
-      WIDTH: ${{ github.event.client_payload.width }}
-      HEIGHT: ${{ github.event.client_payload.height }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install ffmpeg + fonts + awscli
+      - name: Configure credentials (R2)
         run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+          echo "AWS_DEFAULT_REGION=us-east-1" >> $GITHUB_ENV
+
+      - name: Install tools
+        run: |
+          set -e
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core awscli curl
-
-      - name: Configure AWS (R2)
-        run: |
-          aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
-          aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
-          aws configure set region "auto"
+          sudo apt-get install -y ffmpeg curl
 
       - name: Download inputs
         run: |
           set -e
-          echo "Downloading background image..."
-          curl -L "$BG_URL" -o bg.png
+          curl -fL "${{ inputs.mp3_url }}" -o vo.mp3
+          curl -fL "${{ inputs.bg_image_url }}" -o bg.png
+          printf "%s" "${{ inputs.srt_text }}" > subs.srt
+          ls -lh vo.mp3 bg.png subs.srt
 
-          echo "Downloading MP3 and SRT from R2..."
-          aws --endpoint-url "$R2_ENDPOINT" s3 cp "s3://$R2_BUCKET/$MP3_KEY" vo.mp3
-          aws --endpoint-url "$R2_ENDPOINT" s3 cp "s3://$R2_BUCKET/$SRT_KEY" subs.srt
-
-          ls -lah
-
-      - name: Render MP4 (1280x720, 16:9) with burned subtitles
+      - name: Render MP4 (1280x720) + burned subtitles
         run: |
           set -e
-          W=${WIDTH:-1280}
-          H=${HEIGHT:-720}
-
           ffmpeg -y \
             -loop 1 -i bg.png \
             -i vo.mp3 \
-            -vf "scale=${W}:${H}:force_original_aspect_ratio=cover,crop=${W}:${H},subtitles=subs.srt:force_style='FontName=DejaVu Sans,FontSize=42,Outline=4,Shadow=1,MarginV=50'" \
+            -vf "scale=1280:720:force_original_aspect_ratio=cover,crop=1280:720,subtitles=subs.srt:force_style='FontName=DejaVu Sans,FontSize=42,Outline=4,Shadow=1,MarginV=50'" \
             -c:v libx264 -tune stillimage -pix_fmt yuv420p \
             -c:a aac -b:a 192k \
             -shortest out.mp4
-
-          ls -lah out.mp4
+          ls -lh out.mp4
 
       - name: Upload MP4 to R2
         run: |
           set -e
-          aws --endpoint-url "$R2_ENDPOINT" s3 cp out.mp4 "s3://$R2_BUCKET/$OUT_KEY" \
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp \
+            out.mp4 "s3://${{ secrets.R2_BUCKET }}/outputs/${{ inputs.job_id }}/final.mp4" \
             --content-type "video/mp4"
-          echo "Uploaded: s3://$R2_BUCKET/$OUT_KEY"
+
+      - name: Generate signed URL (30 min)
+        id: sign
+        run: |
+          set -e
+          URL=$(aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 presign \
+            "s3://${{ secrets.R2_BUCKET }}/outputs/${{ inputs.job_id }}/final.mp4" \
+            --expires-in 1800)
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "$URL" > signed_url.txt
+
+      - name: Upload signed URL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed_url
+          path: signed_url.txt
+          retention-days: 1
