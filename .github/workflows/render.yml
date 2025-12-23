@@ -46,7 +46,7 @@ jobs:
           ffmpeg -y \
             -loop 1 -i bg.png \
             -i vo.mp3 \
-            -vf "scale=1280:720:force_original_aspect_ratio=cover,crop=1280:720,subtitles=subs.srt:force_style='FontName=DejaVu Sans,FontSize=42,Outline=4,Shadow=1,MarginV=50'" \
+            -vf "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,subtitles=subs.srt:force_style='FontName=DejaVu Sans,FontSize=42,Outline=4,Shadow=1,MarginV=50'" \
             -c:v libx264 -tune stillimage -pix_fmt yuv420p \
             -c:a aac -b:a 192k \
             -shortest out.mp4
