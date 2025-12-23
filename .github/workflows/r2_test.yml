@@ -6,35 +6,48 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
-            - name: Install awscli (official)
+      - name: Install AWS CLI v2 (official)
         run: |
+          set -e
           sudo apt-get update
-          sudo apt-get install -y unzip curl
+          sudo apt-get install -y curl unzip
           curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip -q awscliv2.zip
           sudo ./aws/install
           aws --version
 
+      - name: Verify required secrets exist
+        run: |
+          set -e
+          test -n "${{ secrets.R2_ENDPOINT }}" || (echo "Missing secret: R2_ENDPOINT" && exit 1)
+          test -n "${{ secrets.R2_BUCKET }}" || (echo "Missing secret: R2_BUCKET" && exit 1)
+          test -n "${{ secrets.R2_ACCESS_KEY_ID }}" || (echo "Missing secret: R2_ACCESS_KEY_ID" && exit 1)
+          test -n "${{ secrets.R2_SECRET_ACCESS_KEY }}" || (echo "Missing secret: R2_SECRET_ACCESS_KEY" && exit 1)
 
-      - name: Configure AWS env
+      - name: Configure env (R2)
         run: |
           echo "AWS_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}" >> $GITHUB_ENV
           echo "AWS_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
-          echo "AWS_DEFAULT_REGION=auto" >> $GITHUB_ENV
+          echo "AWS_DEFAULT_REGION=us-east-1" >> $GITHUB_ENV
 
-      - name: Show endpoint + bucket
+      - name: List bucket (proves creds + endpoint)
         run: |
-          echo "Endpoint: ${{ secrets.R2_ENDPOINT }}"
-          echo "Bucket:   ${{ secrets.R2_BUCKET }}"
-
-      - name: List bucket (should succeed)
-        run: |
-          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 ls "s3://${{ secrets.R2_BUCKET }}/" || exit 1
+          set -e
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 ls "s3://${{ secrets.R2_BUCKET }}/"
 
       - name: Upload + download a tiny test file
         run: |
-          echo "hello" > test.txt
-          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp test.txt "s3://${{ secrets.R2_BUCKET }}/test/n8n_test.txt"
-          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp "s3://${{ secrets.R2_BUCKET }}/test/n8n_test.txt" out.txt
+          set -e
+          echo "hello from github actions" > test.txt
+
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp \
+            test.txt "s3://${{ secrets.R2_BUCKET }}/test/r2_test.txt" \
+            --content-type "text/plain"
+
+          aws --endpoint-url "${{ secrets.R2_ENDPOINT }}" s3 cp \
+            "s3://${{ secrets.R2_BUCKET }}/test/r2_test.txt" out.txt
+
+          echo "Downloaded contents:"
           cat out.txt
